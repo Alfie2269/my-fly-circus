@@ -256,10 +256,27 @@ sudo systemctl daemon-reload
 sudo systemctl restart fly-circus
 ```
 
+## FlyWire brain compatibility
+
+The server has an optional FlyWire connectome adapter. It can use a curated, mapped subset of real FlyWire connectivity to influence the flies' next need/behaviour choice. The brain runtime is server-side, so multiplayer clients stay synchronised. Without a dataset file, the existing needs-based AI continues unchanged.
+
+This repository contains the adapter and its JSON schema, **not the full connectome dataset**. The full bulk connection table is too large for the game repository, and raw connectivity alone does not define hunger, fun, energy or social behaviour. A dataset-specific neuron mapping is required.
+
+See [`brain/README.md`](brain/README.md) for the supported format, data sources, mapping requirements and setup. To enable it, place a curated `brain/flywire-network.json` file on the server and restart:
+
+```bash
+sudo systemctl restart fly-circus
+sudo journalctl -u fly-circus -n 50 --no-pager
+```
+
+The log reports whether the optional network loaded. The current runtime is an experimental connectome-informed decision layer, not a biologically faithful whole-brain simulator.
+
 ## Project files
 
 - `server.js` — HTTP server, WebSocket multiplayer, fly simulation, admin approval checks, and world persistence.
 - `public/index.html` — Three.js browser client.
+- `brain/flywire-adapter.js` — optional server-side FlyWire connectivity runtime.
+- `brain/README.md` and `brain/flywire-network.schema.json` — brain data format and setup instructions.
 - `package.json` and `package-lock.json` — Node.js project metadata and dependency lock.
 - `world.json` — runtime world save, created by the server when it saves approved objects. It is not included in the Git repository by default.
 - `/etc/fly-circus.env` — server-side admin token; intentionally kept outside the repository.
