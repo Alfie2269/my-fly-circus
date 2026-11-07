@@ -2,6 +2,7 @@
 // Run: ADMIN_TOKEN=<16+ random chars> node server.js   (serves ./public and a WebSocket on the same port)
 const http = require("http"), fs = require("fs"), path = require("path"), crypto = require("crypto");
 const { WebSocketServer } = require("ws");
+const { loadBrain, createBrainRuntime } = require("./brain/flywire-adapter");
 
 const PORT = +process.env.PORT || 3000;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
@@ -22,6 +23,10 @@ const FLY_DEFS = [["Buzz", { hunger: 1.4 }], ["Nibbles", { hunger: 1.8 }], ["Zee
 const inT = p => Math.abs(p.x) < 8 && Math.abs(p.z) < 8;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const rnd = (a, b) => a + Math.random() * (b - a);
+const brainNetwork = loadBrain();
+const brainRuntime = createBrainRuntime(brainNetwork);
+if (brainRuntime) console.log(`[brain] Loaded ${brainRuntime.dataset} ${brainRuntime.version} (${brainNetwork.edges.length} connections)`);
+else console.log("[brain] No FlyWire network loaded; using standard needs-based AI.");
 
 // ---------- object recipes: the ONLY way anything new enters the world ----------
 function validRecipe(r) {
@@ -43,10 +48,10 @@ objects.forEach(o => o.fun && POIS.push({ need: "fun", p: [o.at[0], 1.5, o.at[1]
 const flies = FLY_DEFS.map(([name, tr], i) => {
   const rate = {}, n = {};
   NEEDS.forEach(k => { rate[k] = rnd(.8, 1.2) * (tr[k] || 1); n[k] = rnd(40, 90); });
-  return { i, name, g: { x: rnd(-5, 5), y: rnd(2, 4), z: rnd(-5, 5) }, ry: 0, rate, n, state: "idle", need: null, tgt: null, tf: null, useT: 0, off: { x: 0, y: 0, z: 0 }, q: null, act: "" };
+  return { i, name, g: { x: rnd(-5, 5), y: rnd(2, 4), z: rnd(-5, 5) }, ry: 0, rate, n, brainState: {}, state: "idle", need: null, tgt: null, tf: null, useT: 0, off: { x: 0, y: 0, z: 0 }, q: null, act: "" };
 });
 function pick(f) {
-  let k = NEEDS[0]; NEEDS.forEach(x => { if (f.n[x] < f.n[k]) k = x; });
+  let k = brainRuntime && brainRuntime.chooseNeed(f.n, f.brainState);\n  if (!k || !NEEDS.includes(k)) { k = NEEDS[0]; NEEDS.forEach(x => { if (f.n[x] < f.n[k]) k = x; }); }\n  f.brainState[k] = (f.brainState[k] || 0) + 1;
   Object.assign(f, { need: k, state: "go", q: null, useT: 0, off: { x: rnd(-.6, .6), y: 0, z: rnd(-.6, .6) } });
   if (k === "social") { const o = flies.filter(x => x !== f); f.tf = o[Math.floor(Math.random() * o.length)]; f.act = "going to chat with " + f.tf.name; }
   else { const o = POIS.filter(p => p.need === k); f.tgt = o[Math.floor(Math.random() * o.length)]; f.tf = null; f.act = "heading to " + f.tgt.n; }
