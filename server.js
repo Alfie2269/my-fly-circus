@@ -51,7 +51,9 @@ const flies = FLY_DEFS.map(([name, tr], i) => {
   return { i, name, g: { x: rnd(-5, 5), y: rnd(2, 4), z: rnd(-5, 5) }, ry: 0, rate, n, brainState: {}, state: "idle", need: null, tgt: null, tf: null, useT: 0, off: { x: 0, y: 0, z: 0 }, q: null, act: "" };
 });
 function pick(f) {
-  let k = brainRuntime && brainRuntime.chooseNeed(f.n, f.brainState);\n  if (!k || !NEEDS.includes(k)) { k = NEEDS[0]; NEEDS.forEach(x => { if (f.n[x] < f.n[k]) k = x; }); }\n  f.brainState[k] = (f.brainState[k] || 0) + 1;
+  let k = brainRuntime && brainRuntime.chooseNeed(f.n, f.brainState);
+  if (!k || !NEEDS.includes(k)) { k = NEEDS[0]; NEEDS.forEach(x => { if (f.n[x] < f.n[k]) k = x; }); }
+  f.brainState[k] = (f.brainState[k] || 0) + 1;
   Object.assign(f, { need: k, state: "go", q: null, useT: 0, off: { x: rnd(-.6, .6), y: 0, z: rnd(-.6, .6) } });
   if (k === "social") { const o = flies.filter(x => x !== f); f.tf = o[Math.floor(Math.random() * o.length)]; f.act = "going to chat with " + f.tf.name; }
   else { const o = POIS.filter(p => p.need === k); f.tgt = o[Math.floor(Math.random() * o.length)]; f.tf = null; f.act = "heading to " + f.tgt.n; }
