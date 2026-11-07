@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fly Circus FlyWire network",
+  "type": "object",
+  "required": ["inputs", "outputs", "edges"],
+  "properties": {
+    "dataset": { "type": "string" },
+    "version": { "type": "string" },
+    "inputs": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+    "outputs": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+    "edges": {
+      "type": "array",
+      "maxItems": 150000,
+      "items": {
+        "type": "object",
+        "required": ["source", "target", "weight"],
+        "properties": {
+          "source": { "type": "string" },
+          "target": { "type": "string" },
+          "weight": { "type": "number", "minimum": -2, "maximum": 2 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
