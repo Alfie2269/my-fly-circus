@@ -141,7 +141,7 @@ const server = http.createServer((req, res) => {
   try { pathname = decodeURIComponent((req.url || "/").split("?")[0]); }
   catch { res.writeHead(400).end("Bad request"); return; }
   if (pathname.includes("\0")) { res.writeHead(400).end("Bad request"); return; }
-  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\\/+/, "");
+  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const f = path.resolve(PUB, relative);
   if (f !== PUB && !f.startsWith(PUB + path.sep)) { res.writeHead(403).end(); return; }
   fs.readFile(f, (e, b) => e ? res.writeHead(404).end("Not found") : res.writeHead(200, { "Content-Type": MIME[path.extname(f)] || "application/octet-stream" }).end(b));
