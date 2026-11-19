@@ -51,7 +51,7 @@ function cleanRecipe(r) {
 
 // ---------- persistence ----------
 let objects = [];
-let saveBlocked = false;
+let saveBlocked = false, savePending = false, saveAgain = false, saveSequence = 0;
 try {
   const world = JSON.parse(fs.readFileSync(SAVE, "utf8"));
   if (!world || !Array.isArray(world.objects)) throw new Error("World save has no objects array");
@@ -64,13 +64,20 @@ try {
 }
 const save = () => {
   if (saveBlocked) return;
-  const temp = SAVE + "." + process.pid + ".tmp";
+  if (savePending) { saveAgain = true; return; }
+  savePending = true;
+  const temp = SAVE + "." + process.pid + "." + (++saveSequence) + ".tmp";
+  const finish = () => {
+    savePending = false;
+    if (saveAgain) { saveAgain = false; save(); }
+  };
   fs.writeFile(temp, JSON.stringify({ objects }), { mode: 0o600 }, err => {
-    if (err) { console.error("[world] Temporary save failed:", err.message); return; }
+    if (err) { console.error("[world] Temporary save failed:", err.message); finish(); return; }
     fs.copyFile(SAVE, SAVE + ".backup", backupErr => {
       if (backupErr && backupErr.code !== "ENOENT") console.error("[world] Backup failed:", backupErr.message);
       fs.rename(temp, SAVE, renameErr => {
         if (renameErr) console.error("[world] Atomic save failed:", renameErr.message);
+        finish();
       });
     });
   });
@@ -86,7 +93,8 @@ const flies = FLY_DEFS.map(([name, tr], i) => {
 function pick(f) {
   let k = brainRuntime && brainRuntime.chooseNeed(f.n, f.brainState);
   if (!k || !NEEDS.includes(k)) { k = NEEDS[0]; NEEDS.forEach(x => { if (f.n[x] < f.n[k]) k = x; }); }
-  f.brainState[k] = (f.brainState[k] || 0) + 1;
+  NEEDS.forEach(need => { f.brainState[need] = (f.brainState[need] || 0) * .8; });
+  f.brainState[k] = Math.min(3, (f.brainState[k] || 0) + 1);
   Object.assign(f, { need: k, state: "go", q: null, useT: 0, off: { x: rnd(-.6, .6), y: 0, z: rnd(-.6, .6) } });
   if (k === "social") { const o = flies.filter(x => x !== f); f.tf = o[Math.floor(Math.random() * o.length)]; f.act = "going to chat with " + f.tf.name; }
   else { const o = POIS.filter(p => p.need === k); f.tgt = o[Math.floor(Math.random() * o.length)]; f.tf = null; f.act = "heading to " + f.tgt.n; }
