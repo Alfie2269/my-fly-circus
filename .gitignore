@@ -4,3 +4,9 @@ node_modules/
 !.env.example
 *.log
 .DS_Store
+world.json
+world.json.backup
+world.json.*.tmp
+world.json.backup.*
+flybrain/*.parquet
+brain/flywire-network.json
