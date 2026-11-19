@@ -129,6 +129,10 @@ Environment=PORT=3000
 ExecStart=/usr/bin/node /home/solver/fly-circus-server/server.js
 Restart=always
 RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/solver/fly-circus-server
 
 [Install]
 WantedBy=multi-user.target
@@ -177,6 +181,8 @@ If you make local code changes that you want to keep, commit or back them up bef
 ## 7. Back up and restore the world
 
 The server stores approved world objects in `world.json` in the project directory. The file is generated when the server saves world changes; it may not exist until something has been approved.
+
+The server writes world changes to a temporary file and renames it into place, so an interrupted write does not leave a partially written save. It keeps the previous save as `world.json.backup`. If the main save cannot be parsed, saving is disabled for that run rather than replacing the damaged file with an empty world.
 
 Create a backup:
 
