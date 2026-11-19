@@ -161,6 +161,7 @@ const num = v => typeof v === "number" && Number.isFinite(v);
 const heartbeat = setInterval(() => {
   for (const ws of wss.clients) {
     if (ws.isAlive === false) { ws.terminate(); continue; }
+    if (ws.readyState !== 1) continue;
     ws.isAlive = false;
     ws.ping();
   }
