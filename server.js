@@ -30,18 +30,51 @@ else console.log("[brain] No FlyWire network loaded; using standard needs-based 
 
 // ---------- object recipes: the ONLY way anything new enters the world ----------
 function validRecipe(r) {
-  if (!r || typeof r.name !== "string" || r.name.length > 80 || !Array.isArray(r.parts) || r.parts.length < 1 || r.parts.length > 24) return false;
-  if (!Array.isArray(r.at) || r.at.length !== 2 || !r.at.every(v => typeof v === "number" && Math.abs(v) <= 90)) return false;
-  return r.parts.every(q => ["box", "sphere", "cylinder"].includes(q.s)
-    && Array.isArray(q.z) && q.z.length === 3 && q.z.every(v => typeof v === "number" && v >= .02 && v <= 3)
-    && Array.isArray(q.p) && q.p.length === 3 && q.p.every(v => typeof v === "number" && Math.abs(v) <= 4)
+  if (!r || typeof r !== "object" || typeof r.name !== "string" || !r.name.trim() || r.name.length > 80) return false;
+  if (!Array.isArray(r.parts) || r.parts.length < 1 || r.parts.length > 24) return false;
+  if (!Array.isArray(r.at) || r.at.length !== 2 || !r.at.every(v => Number.isFinite(v) && Math.abs(v) <= 90)) return false;
+  return r.parts.every(q => q && typeof q === "object" && ["box", "sphere", "cylinder"].includes(q.s)
+    && Array.isArray(q.z) && q.z.length === 3 && q.z.every(v => Number.isFinite(v) && v >= .02 && v <= 3)
+    && Array.isArray(q.p) && q.p.length === 3 && q.p.every(v => Number.isFinite(v) && Math.abs(v) <= 4)
     && typeof q.c === "string" && /^#[0-9a-f]{6}$/i.test(q.c));
+}
+function cleanRecipe(r) {
+  if (!validRecipe(r)) return null;
+  return {
+    name: r.name.trim(),
+    at: r.at.slice(),
+    ...(r.fun === true ? { fun: true } : {}),
+    ...(r.hang === true ? { hang: true } : {}),
+    parts: r.parts.map(q => ({ s: q.s, z: q.z.slice(), p: q.p.slice(), c: q.c.toLowerCase() }))
+  };
 }
 
 // ---------- persistence ----------
 let objects = [];
-try { objects = JSON.parse(fs.readFileSync(SAVE, "utf8")).objects.filter(validRecipe); } catch {}
-const save = () => fs.writeFile(SAVE, JSON.stringify({ objects }), () => {});
+let saveBlocked = false;
+try {
+  const world = JSON.parse(fs.readFileSync(SAVE, "utf8"));
+  if (!world || !Array.isArray(world.objects)) throw new Error("World save has no objects array");
+  objects = world.objects.map(cleanRecipe).filter(Boolean);
+} catch (err) {
+  if (err.code !== "ENOENT") {
+    saveBlocked = true;
+    console.error("[world] Save could not be loaded; writes disabled to protect existing data:", err.message);
+  }
+}
+const save = () => {
+  if (saveBlocked) return;
+  const temp = SAVE + "." + process.pid + ".tmp";
+  fs.writeFile(temp, JSON.stringify({ objects }), { mode: 0o600 }, err => {
+    if (err) { console.error("[world] Temporary save failed:", err.message); return; }
+    fs.copyFile(SAVE, SAVE + ".backup", backupErr => {
+      if (backupErr && backupErr.code !== "ENOENT") console.error("[world] Backup failed:", backupErr.message);
+      fs.rename(temp, SAVE, renameErr => {
+        if (renameErr) console.error("[world] Atomic save failed:", renameErr.message);
+      });
+    });
+  });
+};
 objects.forEach(o => o.fun && POIS.push({ need: "fun", p: [o.at[0], 1.5, o.at[1] + .3], n: "the new " + o.name }));
 
 // ---------- fly simulation (authoritative) ----------
@@ -95,7 +128,7 @@ const IDEAS = [
 let nextId = 1, ideaI = 0; const requests = new Map();
 function newRequest() {
   if (ideaI >= IDEAS.length || requests.size >= 20) return;
-  const recipe = IDEAS[ideaI++]; if (!validRecipe(recipe)) return;
+  const recipe = cleanRecipe(IDEAS[ideaI++]); if (!recipe) return;
   const r = { id: nextId++, fly: flies[Math.floor(Math.random() * flies.length)].name, recipe };
   requests.set(r.id, r); broadcast({ t: "req", req: r });
 }
@@ -104,20 +137,43 @@ setTimeout(newRequest, 8000); setInterval(newRequest, 25000);
 // ---------- http + websocket ----------
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".glb": "model/gltf-binary" };
 const server = http.createServer((req, res) => {
-  const f = path.normalize(path.join(PUB, req.url === "/" ? "index.html" : decodeURIComponent(req.url.split("?")[0])));
-  if (!f.startsWith(PUB + path.sep)) { res.writeHead(403).end(); return; }
+  let pathname;
+  try { pathname = decodeURIComponent((req.url || "/").split("?")[0]); }
+  catch { res.writeHead(400).end("Bad request"); return; }
+  if (pathname.includes("\0")) { res.writeHead(400).end("Bad request"); return; }
+  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\\/+/, "");
+  const f = path.resolve(PUB, relative);
+  if (f !== PUB && !f.startsWith(PUB + path.sep)) { res.writeHead(403).end(); return; }
   fs.readFile(f, (e, b) => e ? res.writeHead(404).end("Not found") : res.writeHead(200, { "Content-Type": MIME[path.extname(f)] || "application/octet-stream" }).end(b));
 });
 const wss = new WebSocketServer({ server, maxPayload: 4096 });
 const players = new Map(); let pid = 1;
 const send = (ws, m) => ws.readyState === 1 && ws.send(JSON.stringify(m));
-function broadcast(m) { wss.clients.forEach(ws => { if (m.t === "req" && !players.get(ws)?.admin) return; send(ws, m); }); }   // fly requests go to admins only
+function broadcast(m) {
+  const payload = JSON.stringify(m);
+  wss.clients.forEach(ws => {
+    if (m.t === "req" && !players.get(ws)?.admin) return;
+    if (ws.readyState === 1) ws.send(payload);
+  });
+}   // fly requests go to admins only
 const okToken = t => { try { const a = Buffer.from(String(t)), b = Buffer.from(ADMIN_TOKEN); return a.length === b.length && crypto.timingSafeEqual(a, b); } catch { return false; } };
-const num = v => typeof v === "number" && isFinite(v);
+const num = v => typeof v === "number" && Number.isFinite(v);
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 30000);
+wss.on("close", () => clearInterval(heartbeat));
 
 wss.on("connection", ws => {
+  ws.on("error", err => console.warn("[ws] Connection error:", err.message));
   if (players.size >= 30) { ws.close(); return; }
-  const me = { id: pid++, name: "Visitor" + pid, x: 0, y: 1.7, z: 6.5, yaw: 0, admin: false, msgs: 0 };
+  ws.isAlive = true;
+  ws.on("pong", () => { ws.isAlive = true; });
+  const id = pid++;
+  const me = { id, name: "Visitor" + id, x: 0, y: 1.7, z: 6.5, yaw: 0, admin: false, msgs: 0 };
   players.set(ws, me);
   const tick = setInterval(() => { me.msgs = 0; }, 1000);
   send(ws, { t: "init", you: me.id, objects, flies: flies.map(f => f.name), requests: [] });
@@ -132,10 +188,13 @@ wss.on("connection", ws => {
     } else if ((m.t === "approve" || m.t === "deny") && me.admin) {          // admin check happens HERE, server-side
       const r = requests.get(m.id); if (!r) return;
       requests.delete(r.id);
-      if (m.t === "approve" && validRecipe(r.recipe)) {
-        objects.push(r.recipe); save();
-        if (r.recipe.fun) POIS.push({ need: "fun", p: [r.recipe.at[0], 1.5, r.recipe.at[1] + .3], n: "the new " + r.recipe.name });
-        broadcast({ t: "obj", recipe: r.recipe });
+      if (m.t === "approve") {
+        const recipe = cleanRecipe(r.recipe);
+        if (recipe) {
+          objects.push(recipe); save();
+          if (recipe.fun) POIS.push({ need: "fun", p: [recipe.at[0], 1.5, recipe.at[1] + .3], n: "the new " + recipe.name });
+          broadcast({ t: "obj", recipe });
+        }
       }
       broadcast({ t: "reqdone", id: r.id });
     }
