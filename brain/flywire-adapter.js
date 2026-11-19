@@ -25,7 +25,12 @@ function loadBrain(file = path.join(__dirname, "flywire-network.json")) {
       if (!Array.isArray(ids)) continue;
       inputs[name] = ids.map(String);
     }
-    if (!Object.keys(inputs).length || !Object.keys(groups).length) throw new Error("No usable input/output neuron mappings");
+    const needs = ["hunger", "energy", "fun", "social"];
+    const missingInputs = needs.filter(name => !Array.isArray(inputs[name]) || inputs[name].length === 0);
+    const missingOutputs = needs.filter(name => !Array.isArray(groups[name]) || groups[name].length === 0);
+    if (missingInputs.length || missingOutputs.length) {
+      throw new Error("Missing need mappings (inputs: " + (missingInputs.join(", ") || "none") + "; outputs: " + (missingOutputs.join(", ") || "none") + ")");
+    }
     return { version: raw.version || "unspecified", dataset: raw.dataset || "FlyWire", edges, inputs, outputs: groups };
   } catch (err) {
     if (err.code !== "ENOENT") console.warn("[brain] Connectome not loaded:", err.message);
@@ -35,11 +40,6 @@ function loadBrain(file = path.join(__dirname, "flywire-network.json")) {
 
 function createBrainRuntime(network) {
   if (!network) return null;
-  const inputIds = Object.values(network.inputs).flat();
-  const outputIds = Object.values(network.outputs).flat();
-  const relevant = new Set([...inputIds, ...outputIds]);
-  // Keep the imported graph bounded and only retain edges that can be reached
-  // from a mapped input or lead directly to a mapped output.
   const edges = network.edges;
   const outgoing = new Map();
   for (const e of edges) {
@@ -74,7 +74,8 @@ function createBrainRuntime(network) {
         if (!ids.length || needs[need] == null) continue;
         const neural = ids.reduce((sum, id) => sum + Math.max(0, activation.get(id) || 0), 0) / ids.length;
         const homeostatic = Math.max(0, (100 - needs[need]) / 100);
-        const score = neural + homeostatic * 0.2 + (previous[need] || 0) * 0.03;
+        const habit = Math.min(3, Math.max(0, Number(previous[need]) || 0)) * 0.01;
+        const score = neural + homeostatic * 0.2 + habit;
         if (score > bestScore) { bestScore = score; best = need; }
       }
       return best;

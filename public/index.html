@@ -191,7 +191,12 @@ adm.onclick=()=>{const t=prompt("Admin token");if(t){try{sessionStorage.fctoken=
 helpEl.textContent="";helpEl.append(hs,adm);hs.textContent="Connecting\u2026";
 let nm="";try{nm=localStorage.fcname||"";if(!nm){nm=(prompt("Pick a name (letters, max 16)")||"").slice(0,16);localStorage.fcname=nm}}catch{}
 function hello(){let tk="";try{tk=sessionStorage.fctoken||""}catch{}ws.send(JSON.stringify({t:"hello",name:nm,token:tk}))}
-function addObj(r){const g=build(r);if(!g)return;g.position.set(r.at[0],r.hang?4.6:0,r.at[1]);scene.add(g)}
+const worldObjectGroups=[];
+function clearWorldObjects(){
+ for(const g of worldObjectGroups){scene.remove(g);g.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}})}
+ worldObjectGroups.length=0;
+}
+function addObj(r){const g=build(r);if(!g)return;g.position.set(r.at[0],r.hang?4.6:0,r.at[1]);scene.add(g);worldObjectGroups.push(g)}
 function addReq(r){
  if(document.getElementById("r"+r.id))return;
  const d=document.createElement("div");d.className="r";d.id="r"+r.id;
@@ -204,7 +209,7 @@ function connect(){
  ws.onopen=()=>{hs.textContent=HELP;hello()};
  ws.onclose=()=>{hs.textContent="Reconnecting\u2026";setTimeout(connect,2000)};
  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}
-  if(m.t==="init"){myId=m.you;m.objects.forEach(addObj)}
+  if(m.t==="init"){myId=m.you;clearWorldObjects();m.objects.forEach(addObj)}
   else if(m.t==="snap"){snap=m;updPlayers(m.players)}
   else if(m.t==="obj")addObj(m.recipe);
   else if(m.t==="admin"){inbox.style.display="block";m.requests.forEach(addReq)}
